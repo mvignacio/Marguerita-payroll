@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Marguerita Sunset Bar and Restaurant Payroll System</title>
+<script src="[cdn.jsdelivr.net](https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js)"></script>
+
+<style>
+  :root {
+    --sand: #f9e9c4;
+    --sunset: #ff9966;
+    --sea: #009688;
+  }
+
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    max-width: 1100px;
+    margin: auto;
+    padding: 20px;
+    background: linear-gradient(180deg, var(--sand) 0%, #ffe6cc 100%);
+  }
+
+  h1 {
+    text-align: center;
+    margin-bottom: 0;
+    color: var(--sea);
+    text-shadow: 1px 1px #fff;
+  }
+
+  #logo {
+    display:block;
+    margin:10px auto;
+    height:85px;
+  }
+
+  h2 {
+    color: var(--sunset);
+    margin-top: 1.2rem;
+  }
+
+  table {
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
+    box-shadow:0 0 6px rgba(0,0,0,0.1);
+  }
+
+  th, td {
+    border:1px solid #ccc;
+    padding:6px;
+    text-align:center;
+  }
+
+  th {
+    background: var(--sea);
+    color: #fff;
+  }
+
+  tfoot td {
+    font-weight:bold;
+    background: #fff3e0;
+    color: #000;
+  }
+
+  input, button, select {
+    padding:6px;
+    margin:3px;
+    border-radius:4px;
+    border:1px solid #ccc;
+  }
+
+  button {
+    background: var(--sunset);
+    color:#fff;
+    border:none;
+    cursor:pointer;
+  }
+
+  button:hover {
+    background: var(--sea);
+  }
+
+  .section {
+    border:1px solid #ccc;
+    padding:15px;
+    margin-bottom:20px;
+    background: rgba(255,255,255,0.8);
+    border-radius:6px;
+  }
+
+  .flex {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:10px;
+  }
+
+  .right {text-align:right;}
+
+  @media print {
+    body {background:#fff;}
+    .no-print {display:none;}
+    .payslip {
+      page-break-after:always;
+      font-family: Arial, sans-serif;
+    }
+    .payslip table {border-collapse:collapse;width:100%;margin-top:10px;}
+    .payslip th, .payslip td {border:1px solid #000;padding:4px;text-align:left;}
+  }
+</style>
+</head>
+
+<body>
+<h1>Marguerita Sunset Bar and Restaurant<br>Payroll System</h1>
+<img id="logo" src="marguerita-logo.png" alt="Logo">
+
+<div class="section">
+  <h2>Pay Period</h2>
+  <label>Start: <input type="date" id="payStart"></label>
+  <label>End: <input type="date" id="payEnd"></label>
+</div>
+
+<div class="section">
+  <h2>Employees</h2>
+  <div class="flex">
+    <input type="text" id="empName" placeholder="Employee Name">
+    <input type="text" id="empNo" placeholder="Employee ID">
+    <input type="number" id="empRate" placeholder="Rate/hr ₱" min="0">
+    <button onclick="addEmployee()">Add</button>
+  </div>
+
+  <table id="empTable">
+    <thead>
+      <tr>
+        <th>Name</th><th>ID</th><th>Rate/hr</th>
+        <th>Regular Hrs</th><th>OT Hrs</th>
+        <th>Holiday Type</th><th>Cash Advance</th>
+        <th>Net Total (₱)</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+    <tfoot>
+      <tr><td colspan="7" class="right">GRAND TOTAL (₱):</td>
+          <td id="grandTotal">0.00</td><td></td></tr>
+    </tfoot>
+  </table>
+</div>
+
+<div class="right no-print">
+  <button onclick="exportToExcel()">📄 Download as Excel</button>
+  <button onclick="printPayslips()">🖨 Print Payslips</button>
+</div>
+
+<script>
+let employees = [];
+
+function addEmployee(){
+  const name  = document.getElementById('empName').value.trim();
+  const empNo = document.getElementById('empNo').value.trim();
+  const rate  = parseFloat(document.getElementById('empRate').value);
+  if(!name || isNaN(rate)){ alert("Enter valid name and rate/hr"); return; }
+  employees.push({name, empNo, rate, reg:0, ot:0, holiday:'none', ca:0});
+  document.getElementById('empName').value='';
+  document.getElementById('empNo').value='';
+  document.getElementById('empRate').value='';
+  renderTable();
+}
+
+function computeNet(e){
+  let mult=1;
+  if(e.holiday==='double') mult=2;
+  if(e.holiday==='special') mult=1.3;
+  const hours=(e.reg||0)+(e.ot||0);
+  const gross=hours*(e.rate||0)*mult;
+  return gross-(e.ca||0);
+}
+
+function renderTable(){
+  const tbody=document.querySelector('#empTable tbody');
+  let total=0;
+  tbody.innerHTML = employees.map((e,i)=>{
+    const net=computeNet(e); total+=net;
+    return `<tr>
+      <td>${e.name}</td>
+      <td>${e.empNo}</td>
+      <td><input type="number" value="${e.rate}" onchange="updateEmp(${i},'rate',this.value)"></td>
+      <td><input type="number" value="${e.reg}" onchange="updateEmp(${i},'reg',this.value)"></td>
+      <td><input type="number" value="${e.ot}" onchange="updateEmp(${i},'ot',this.value)"></td>
+      <td>
+        <select onchange="updateEmp(${i},'holiday',this.value)">
+          <option value="none" ${e.holiday==='none'?'selected':''}>None</option>
+          <option value="double" ${e.holiday==='double'?'selected':''}>Double Pay</option>
+          <option value="special" ${e.holiday==='special'?'selected':''}>Special Holiday</option>
+        </select>
+      </td>
+      <td><input type="number" value="${e.ca}" onchange="updateEmp(${i},'ca',this.value)"></td>
+      <td style="font-weight:bold;background:#e0f2f1;">₱${net.toFixed(2)}</td>
+      <td><button onclick="deleteEmp(${i})">❌</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('grandTotal').textContent = total.toFixed(2);
+}
+
+function updateEmp(i,key,val){
+  employees[i][key]=key==='holiday'?val:parseFloat(val)||0;
+  renderTable();
+}
+
+function deleteEmp(i){
+  employees.splice(i,1);
+  renderTable();
+}
+
+/* ---------- Excel Export ---------- */
+function exportToExcel(){
+  if(employees.length===0){alert("No data to export.");return;}
+  const payStart=document.getElementById('payStart').value;
+  const payEnd=document.getElementById('payEnd').value;
+  const data=employees.map(e=>{
+    let mult=1;
+    if(e.holiday==='double') mult=2;
+    if(e.holiday==='special') mult=1.3;
+    const hours=(e.reg||0)+(e.ot||0);
+    const gross=hours*(e.rate||0)*mult;
+    const net=gross-(e.ca||0);
+    return {
+      Name:e.name, ID:e.empNo, Rate:e.rate,
+      'Regular Hrs':e.reg, 'OT Hrs':e.ot, 'Holiday Type':e.holiday,
+      'Cash Advance':e.ca, 'Gross Pay':gross.toFixed(2), 'Net Pay':net.toFixed(2),
+      'Pay Start':payStart, 'Pay End':payEnd
+    };
+  });
+  const sheet=XLSX.utils.json_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,sheet,"Payroll");
+  XLSX.writeFile(wb,`Marguerita_Payroll_${payStart}_${payEnd}.xlsx`);
+}
+
+/* ---------- Printable Payslips with Logo ---------- */
+function printPayslips(){
+  if(employees.length===0){alert("No employees to print.");return;}
+  const payStart=document.getElementById('payStart').value;
+  const payEnd=document.getElementById('payEnd').value;
+  const logoSrc=document.getElementById('logo').src;
+
+  const win=window.open('','PRINT','height=650,width=900');
+  win.document.write('<html><head><title>Payslips</title>');
+  win.document.write('<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;width:100%;margin-top:10px;}th,td{border:1px solid #000;padding:4px;text-align:left;}h2{text-align:center;color:#009688;}hr{margin:10px 0;}</style>');
+  win.document.write('</head><body>');
+  employees.forEach(e=>{
+    const net=computeNet(e);
+    let mult=1;if(e.holiday==='double')mult=2;if(e.holiday==='special')mult=1.3;
+    const hours=(e.reg||0)+(e.ot||0);
+    const gross=hours*(e.rate||0)*mult;
+    win.document.write(`
+      <div class="payslip">
+        <div style="text-align:center;">
+          <img src="${logoSrc}" style="height:80px;"><br>
+          <h2>Marguerita Sunset Bar and Restaurant</h2>
+          <p><strong>Weekly Time Sheet and Payroll</strong></p>
+        </div>
+        <p>Employee: <b>${e.name}</b> (${e.empNo||''})<br>
+           Period: ${payStart} to ${payEnd}</p>
+        <table>
+          <tr><th>Description</th><th>Hours/Amount</th></tr>
+          <tr><td>Regular Hours</td><td>${e.reg||0}</td></tr>
+          <tr><td>OT Hours</td><td>${e.ot||0}</td></tr>
+          <tr><td>Holiday Type</td><td>${e.holiday}</td></tr>
+          <tr><td>Cash Advance</td><td>₱${(e.ca||0).toFixed(2)}</td></tr>
+          <tr><td>Gross Pay</td><td>₱${gross.toFixed(2)}</td></tr>
+          <tr><td><b>Net Pay</b></td><td><b>₱${net.toFixed(2)}</b></td></tr>
+        </table>
+        <br>
+        <p>Employee Signature: ____________________</p>
+        <p>Manager Signature: ____________________</p>
+        <hr>
+      </div>
+    `);
+  });
+  win.document.write('</body></html>');
+  win.document.close();
+  win.focus();
+  win.print();
+}
+</script>
+
+</body>
+</html>
