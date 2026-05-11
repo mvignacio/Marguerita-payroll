@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Marguerita Payroll System (Offline)</title>
+
+<script src="[cdn.jsdelivr.net](https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js)"></script>
+<script src="[cdnjs.cloudflare.com](https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js)"></script>
+<script src="[cdnjs.cloudflare.com](https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js)"></script>
+
+<style>
+  body { font-family: Arial, sans-serif; max-width: 1100px; margin:auto; padding:20px; }
+  table { width:100%; border-collapse:collapse; margin-top:10px; }
+  th,td { border:1px solid #ccc; padding:6px; text-align:center; }
+  input,button { padding:6px; margin:3px; }
+  .section { border:1px solid #ddd; padding:15px; margin-bottom:20px; }
+  .flex { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  img#logo { height:85px; }
+  h1 { display:flex; justify-content:space-between; align-items:center; }
+  .right{text-align:right;}
+</style>
+</head>
+
+<body>
+
+<h1>
+  Marguerita Sunset Bar & Restaurant
+  <img id="logo" 
+    src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOEAAADhCAYAAABqW7tVAAAACXBIWXMAAAsTAAALEwEAmpwYAAA..." 
+    alt="Marguerita Logo">
+</h1>
+
+<div class="section">
+  <h2>Pay Period</h2>
+  <div class="flex">
+    <label>Start: <input type="date" id="payStart"></label>
+    <label>End: <input type="date" id="payEnd"></label>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Add Employee</h2>
+  <div class="flex">
+    <input type="text" id="empName" placeholder="Employee Name">
+    <input type="text" id="empNo" placeholder="Employee No.">
+    <input type="number" id="empRate" placeholder="Rate/hr ₱" min="0">
+    <button onclick="addEmployee()">Add</button>
+    <button onclick="backupData()">💾 Export</button>
+    <button onclick="document.getElementById('importFile').click()">📂 Import</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none;">
+  </div>
+
+  <table id="empTable">
+    <thead>
+      <tr>
+        <th>Name</th><th>ID</th><th>Rate/hr</th>
+        <th>Regular</th><th>OT</th><th>Holiday</th>
+        <th>SSS</th><th>PhilHealth</th><th>Pag‑IBIG</th>
+        <th>Loan</th><th>CA</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="right">
+  <button onclick="generatePayroll()">🧾 Generate Payroll PDF</button>
+</div>
+
+<div id="output" class="section"></div>
+
+<script>
+let db;
+
+window.onload = async function(){
+  try {
+    db = new Dexie("PayrollDB");
+    db.version(1).stores({ employees: "++id,name" });
+    await loadEmps();
+  } catch(e){
+    document.getElementById("output").textContent = 
+      "⚠️ IndexedDB not allowed in this environment. Try using Chrome or Edge and open as a local file.";
+  }
+}
+
+async function loadEmps(){
+  const arr = await db.employees.toArray();
+  fillTable(arr);
+}
+
+function fillTable(arr){
+  const tb = document.querySelector("#empTable tbody");
+  tb.innerHTML = arr.map(e => `
+    <tr>
+      <td>${e.name}</td>
+      <td>${e.empNo||''}</td>
+      <td><input type="number" value="${e.rate||0}" onchange="upd(${e.id},'rate',this.value)"></td>
+      <td><input type="number" value="${e.reg||0}" onchange="upd(${e.id},'reg',this.value)"></td>
+      <td><input type="number" value="${e.ot||0}" onchange="upd(${e.id},'ot',this.value)"></td>
+      <td><input type="checkbox" ${e.holiday?'checked':''} onchange="upd(${e.id},'holiday',this.checked)"></td>
+      <td><input type="number" value="${e.sss||0}" onchange="upd(${e.id},'sss',this.value)"></td>
+      <td><input type="number" value="${e.phil||0}" onchange="upd(${e.id},'phil',this.value)"></td>
+      <td><input type="number" value="${e.pagibig||0}" onchange="upd(${e.id},'pagibig',this.value)"></td>
+      <td><input type="number" value="${e.loan||0}" onchange="upd(${e.id},'loan',this.value)"></td>
+      <td><input type="number" value="${e.ca||0}" onchange="upd(${e.id},'ca',this.value)"></td>
+      <td><button onclick="del(${e.id})">X</button></td>
+    </tr>
+  `).join('');
+}
+
+async function addEmployee(){
+  const n = empName.value.trim();
+  const no = empNo.value.trim();
+  const rate = parseFloat(empRate.value);
+  if(!n || isNaN(rate)) return alert("Please enter valid name and rate");
+  await db.employees.add({name:n, empNo:no, rate, reg:0, ot:0, holiday:false, sss:0, phil:0, pagibig:0, loan:0, ca:0});
+  empName.value = empNo.value = empRate.value = "";
+  loadEmps();
+}
+
+async function upd(id,k,v){
+  await db.employees.update(id,{[k]:k==="holiday"?v:parseFloat(v)||0});
+}
+
+async function del(id){
+  await db.employees.delete(id);
+  loadEmps();
+}
+
+async function backupData(){
+  const data = await db.employees.toArray();
+  const blob = new Blob([JSON.stringify(data)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="PayrollBackup.json";
+  a.click();
+}
+
+importFile.onchange = function(){
+  const f=this.files[0];
+  const r=new FileReader();
+  r.onload=async()=>{
+    await db.employees.clear();
+    await db.employees.bulkAdd(JSON.parse(r.result));
+    loadEmps();
+  };
+  r.readAsText(f);
+}
+
+async function generatePayroll(){
+  const {jsPDF}=window.jspdf;
+  const emps = await db.employees.toArray();
+  let html = `<h2>Payroll Summary</h2><p>${payStart.value} - ${payEnd.value}</p>
+  <table><tr><th>Name</th><th>Gross</th><th>Deductions</th><th>Net</th></tr>`;
+  emps.forEach(e=>{
+    let hrs=(e.reg||0)+(e.ot||0);
+    if(e.holiday) hrs*=2;
+    const gross=hrs*(e.rate||0);
+    const ded=(e.sss||0)+(e.phil||0)+(e.pagibig||0)+(e.loan||0)+(e.ca||0);
+    html+=`<tr><td>${e.name}</td><td>₱${gross.toFixed(2)}</td><td>₱${ded.toFixed(2)}</td><td><b>₱${(gross-ded).toFixed(2)}</b></td></tr>`;
+  });
+  html+="</table>";
+  output.innerHTML=html;
+
+  const canvas=await html2canvas(output);
+  const img=canvas.toDataURL('image/png');
+  const pdf=new jsPDF();
+  pdf.addImage(img,'PNG',10,10,190,0);
+  pdf.save('Payroll.pdf');
+}
+</script>
+</body>
+</html>
